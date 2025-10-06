@@ -33,7 +33,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	golog "log"
 	"math/big"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -378,6 +380,9 @@ type BlockChain struct {
 
 	// [txIndexTailLock] is used to synchronize the updating of the tx index tail.
 	txIndexTailLock sync.Mutex
+
+	// latency logger
+	latLogger golog.Logger
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -387,6 +392,13 @@ func NewBlockChain(
 	db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis, engine consensus.Engine,
 	vmConfig vm.Config, lastAcceptedHash common.Hash, skipChainConfigCheckCompatible bool,
 ) (*BlockChain, error) {
+	metrics.EnabledExpensive = true
+	f, err := os.OpenFile("/users/squ27/latency_breakdown.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Error("Failed to open log file", "error", err)
+		return nil, err
+	}
+
 	if cacheConfig == nil {
 		return nil, errCacheConfigNotSpecified
 	}
@@ -427,6 +439,7 @@ func NewBlockChain(
 		acceptorQueue:     make(chan *types.Block, cacheConfig.AcceptorQueueLimit),
 		quit:              make(chan struct{}),
 		acceptedLogsCache: NewFIFOCache[common.Hash, [][]*types.Log](cacheConfig.AcceptedCacheSize),
+		latLogger:         *golog.New(f, "", 0),
 	}
 	bc.stateCache = extstate.NewDatabaseWithNodeDB(bc.db, bc.triedb)
 	bc.validator = NewBlockValidator(chainConfig, bc, engine)
@@ -1424,12 +1437,35 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		return err
 	}
 	// Update the metrics touched during block commit
+	blockWriteTime := time.Since(wstart)
+	blockInsertTime := time.Since(start)
 	accountCommitTimer.Inc(statedb.AccountCommits.Milliseconds())   // Account commits are complete, we can mark them
 	storageCommitTimer.Inc(statedb.StorageCommits.Milliseconds())   // Storage commits are complete, we can mark them
 	snapshotCommitTimer.Inc(statedb.SnapshotCommits.Milliseconds()) // Snapshot commits are complete, we can mark them
 	triedbCommitTimer.Inc(statedb.TrieDBCommits.Milliseconds())     // Trie database commits are complete, we can mark them
-	blockWriteTimer.Inc((time.Since(wstart) - statedb.AccountCommits - statedb.StorageCommits - statedb.SnapshotCommits - statedb.TrieDBCommits).Milliseconds())
-	blockInsertTimer.Inc(time.Since(start).Milliseconds())
+	blockWriteTimer.Inc((blockWriteTime - statedb.AccountCommits - statedb.StorageCommits - statedb.SnapshotCommits - statedb.TrieDBCommits).Milliseconds())
+	blockInsertTimer.Inc(blockInsertTime.Milliseconds())
+
+	accountReadTime := statedb.AccountReads.Seconds() * 1000
+	storageReadTime := statedb.StorageReads.Seconds() * 1000
+	snapshotAccountReadTime := statedb.SnapshotAccountReads.Seconds() * 1000
+	snapshotStorageReadTime := statedb.SnapshotStorageReads.Seconds() * 1000
+	accountUpdateTime := statedb.AccountUpdates.Seconds() * 1000
+	storageUpdateTime := statedb.StorageUpdates.Seconds() * 1000
+	accountHashTime := statedb.AccountHashes.Seconds() * 1000
+	storageHashTime := statedb.StorageHashes.Seconds() * 1000
+
+	accountCommitTime := statedb.AccountCommits.Seconds() * 1000
+	storageCommitTime := statedb.StorageCommits.Seconds() * 1000
+	snapshotCommitTime := statedb.SnapshotCommits.Seconds() * 1000
+	triedbCommitTime := statedb.TrieDBCommits.Seconds() * 1000
+
+	bc.latLogger.Printf("%d,%x,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+		block.Number(), block.Hash(),
+		blockInsertTime.Seconds()*1000, ptime.Seconds()*1000, vtime.Seconds()*1000, blockWriteTime.Seconds()*1000,
+		accountReadTime, storageReadTime, snapshotAccountReadTime, snapshotStorageReadTime,
+		accountUpdateTime, storageUpdateTime, accountHashTime, storageHashTime,
+		accountCommitTime, storageCommitTime, snapshotCommitTime, triedbCommitTime)
 
 	log.Debug("Inserted new block", "number", block.Number(), "hash", block.Hash(),
 		"parentHash", block.ParentHash(),
