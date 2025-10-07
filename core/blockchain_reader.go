@@ -255,7 +255,7 @@ func (bc *BlockChain) State() (*state.StateDB, error) {
 
 // StateAt returns a new mutable state based on a particular point in time.
 func (bc *BlockChain) StateAt(root common.Hash) (*state.StateDB, error) {
-	return state.New(root, bc.stateCache, bc.snaps)
+	return state.NewWithLogger(root, bc.stateCache, bc.snaps, &bc.opLogger)
 }
 
 // Config retrieves the chain's fork configuration.

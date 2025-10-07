@@ -381,8 +381,9 @@ type BlockChain struct {
 	// [txIndexTailLock] is used to synchronize the updating of the tx index tail.
 	txIndexTailLock sync.Mutex
 
-	// latency logger
+	// loggers
 	latLogger golog.Logger
+	opLogger  golog.Logger
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -393,9 +394,19 @@ func NewBlockChain(
 	vmConfig vm.Config, lastAcceptedHash common.Hash, skipChainConfigCheckCompatible bool,
 ) (*BlockChain, error) {
 	metrics.EnabledExpensive = true
-	f, err := os.OpenFile("/users/squ27/latency_breakdown.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	logDir := os.Getenv("LOG_DIR")
+	startBlk := os.Getenv("START_BLOCK")
+	endBlk := os.Getenv("END_BLOCK")
+	latFileName := logDir + "latency-breakdown-" + startBlk + "-" + endBlk + ".log"
+	opFileName := logDir + "op-" + startBlk + "-" + endBlk + ".log"
+	lat_f, err := os.OpenFile(latFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
-		log.Error("Failed to open log file", "error", err)
+		log.Error("Failed to open latency log file", "error", err)
+		return nil, err
+	}
+	op_f, err := os.OpenFile(opFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Error("Failed to open op log file", "error", err)
 		return nil, err
 	}
 
@@ -439,7 +450,8 @@ func NewBlockChain(
 		acceptorQueue:     make(chan *types.Block, cacheConfig.AcceptorQueueLimit),
 		quit:              make(chan struct{}),
 		acceptedLogsCache: NewFIFOCache[common.Hash, [][]*types.Log](cacheConfig.AcceptedCacheSize),
-		latLogger:         *golog.New(f, "", 0),
+		latLogger:         *golog.New(lat_f, "", 0),
+		opLogger:          *golog.New(op_f, "", 0),
 	}
 	bc.stateCache = extstate.NewDatabaseWithNodeDB(bc.db, bc.triedb)
 	bc.validator = NewBlockValidator(chainConfig, bc, engine)
@@ -1324,6 +1336,7 @@ func (bc *BlockChain) InsertBlockManual(block *types.Block, writes bool) error {
 }
 
 func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
+	bc.opLogger.Printf("Insert Block %d with %d txns", block.Number(), block.Transactions().Len())
 	start := time.Now()
 	bc.senderCacher.Recover(types.MakeSigner(bc.chainConfig, block.Number(), block.Time()), block.Transactions())
 	blockSignatureRecoveryTimer.Inc(time.Since(start).Milliseconds())
@@ -1374,7 +1387,7 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	// entries directly from the trie (much slower).
 	bc.flattenLock.Lock()
 	defer bc.flattenLock.Unlock()
-	statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
+	statedb, err := state.NewWithLogger(parent.Root, bc.stateCache, bc.snaps, &bc.opLogger)
 	if err != nil {
 		return err
 	}
