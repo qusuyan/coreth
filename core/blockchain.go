@@ -1337,10 +1337,6 @@ func (bc *BlockChain) InsertBlockManual(block *types.Block, writes bool) error {
 
 func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	bc.opLogger.Printf("Insert Block %d with %d txns", block.Number(), block.Transactions().Len())
-	err := os.Setenv("BLOCK_ID", block.Number())
-	if err != nil {
-		fmt.Printf("Error setting environment variable: %v\n", err)
-	}
 
 	start := time.Now()
 	bc.senderCacher.Recover(types.MakeSigner(bc.chainConfig, block.Number(), block.Time()), block.Transactions())
@@ -1478,8 +1474,8 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	snapshotCommitTime := statedb.SnapshotCommits.Seconds() * 1000
 	triedbCommitTime := statedb.TrieDBCommits.Seconds() * 1000
 
-	bc.latLogger.Printf("%d,%x,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
-		block.Number(), block.Hash(),
+	bc.latLogger.Printf("%d,%x,%x,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+		block.Number(), block.Hash(), block.Root(),
 		blockInsertTime.Seconds()*1000, ptime.Seconds()*1000, vtime.Seconds()*1000, blockWriteTime.Seconds()*1000,
 		accountReadTime, storageReadTime, snapshotAccountReadTime, snapshotStorageReadTime,
 		accountUpdateTime, storageUpdateTime, accountHashTime, storageHashTime,
