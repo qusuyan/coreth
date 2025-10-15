@@ -1337,6 +1337,11 @@ func (bc *BlockChain) InsertBlockManual(block *types.Block, writes bool) error {
 
 func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	bc.opLogger.Printf("Insert Block %d with %d txns", block.Number(), block.Transactions().Len())
+	err := os.Setenv("BLOCK_ID", block.Number())
+	if err != nil {
+		fmt.Printf("Error setting environment variable: %v\n", err)
+	}
+
 	start := time.Now()
 	bc.senderCacher.Recover(types.MakeSigner(bc.chainConfig, block.Number(), block.Time()), block.Transactions())
 	blockSignatureRecoveryTimer.Inc(time.Since(start).Milliseconds())
