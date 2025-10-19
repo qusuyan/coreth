@@ -1755,6 +1755,8 @@ func (bc *BlockChain) reportBlock(block *types.Block, receipts types.Receipts, e
 // reprocessBlock reprocesses a previously accepted block. This is often used
 // to regenerate previously pruned state tries.
 func (bc *BlockChain) reprocessBlock(parent *types.Block, current *types.Block) (common.Hash, error) {
+	bc.opLogger.Printf("Insert Block %d with %d txns", current.Number(), current.Transactions().Len())
+
 	// Retrieve the parent block and its state to execute block
 	var (
 		statedb    *state.StateDB
@@ -1764,13 +1766,13 @@ func (bc *BlockChain) reprocessBlock(parent *types.Block, current *types.Block) 
 	// We don't simply use [NewWithSnapshot] here because it doesn't return an
 	// error if [bc.snaps != nil] and [bc.snaps.Snapshot(parentRoot) == nil].
 	if bc.snaps == nil {
-		statedb, err = state.New(parentRoot, bc.stateCache, nil)
+		statedb, err = state.NewWithLogger(parentRoot, bc.stateCache, nil, &bc.opLogger)
 	} else {
 		snap := bc.snaps.Snapshot(parentRoot)
 		if snap == nil {
 			return common.Hash{}, fmt.Errorf("failed to get snapshot for parent root: %s", parentRoot)
 		}
-		statedb, err = state.New(parentRoot, bc.stateCache, bc.snaps)
+		statedb, err = state.NewWithLogger(parentRoot, bc.stateCache, bc.snaps, &bc.opLogger)
 	}
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("could not fetch state for (%s: %d): %v", parent.Hash().Hex(), parent.NumberU64(), err)
