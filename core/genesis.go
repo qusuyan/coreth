@@ -32,9 +32,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	golog "log"
 	"math/big"
-	"os"
 
 	"github.com/ava-labs/avalanchego/vms/evm/acp226"
 	"github.com/ava-labs/coreth/core/extstate"
@@ -237,15 +235,7 @@ func (g *Genesis) trieConfig() *triedb.Config {
 
 // TODO: migrate this function to "flush" for more similarity with upstream.
 func (g *Genesis) toBlock(db ethdb.Database, triedb *triedb.Database) *types.Block {
-	logDir := os.Getenv("LOG_DIR")
-	startBlk := os.Getenv("START_BLOCK")
-	endBlk := os.Getenv("END_BLOCK")
-	genesisLogFile := logDir + "genesis-" + startBlk + "-" + endBlk + ".log"
-	op_f, err := os.OpenFile(genesisLogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		panic(err)
-	}
-	statedb, err := state.NewWithLogger(types.EmptyRootHash, extstate.NewDatabaseWithNodeDB(db, triedb), nil, golog.New(op_f, "", 0))
+	statedb, err := state.New(types.EmptyRootHash, extstate.NewDatabaseWithNodeDB(db, triedb), nil)
 	if err != nil {
 		panic(err)
 	}
