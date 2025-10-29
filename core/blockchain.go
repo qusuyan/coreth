@@ -1390,6 +1390,10 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	defer statedb.StopPrefetcher()
 
 	// Process block using the parent state as reference point
+	miscUtil, err := cpu.Percent(0, false) // reset CPU percent measurement
+	if err != nil {
+		log.Warn("Failed to get CPU percent", "err", err)
+	}
 	pstart := time.Now()
 	receipts, logs, usedGas, err := bc.processor.Process(block, parent, statedb, bc.vmConfig)
 	if serr := statedb.Error(); serr != nil {
@@ -1400,7 +1404,7 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		return err
 	}
 	ptime := time.Since(pstart)
-	execUtil, err := cpu.Percent(ptime, false)
+	execUtil, err := cpu.Percent(0, false)
 	if err != nil {
 		log.Warn("Failed to get CPU percent", "err", err)
 	}
@@ -1412,7 +1416,27 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		return err
 	}
 	vtime := time.Since(vstart)
-	validationUtil, err := cpu.Percent(vtime, false)
+	validationUtil, err := cpu.Percent(0, false)
+	if err != nil {
+		log.Warn("Failed to get CPU percent", "err", err)
+	}
+
+	// If [writes] are disabled, skip [writeBlockWithState] so that we do not write the block
+	// or the state trie to disk.
+	// Note: in pruning mode, this prevents us from generating a reference to the state root.
+	if !writes {
+		return nil
+	}
+
+	// Write the block to the chain and get the status.
+	// writeBlockWithState (called within writeBlockAndSethead) creates a reference that
+	// will be cleaned up in Accept/Reject so we need to ensure an error cannot occur
+	// later in verification, since that would cause the referenced root to never be dereferenced.
+	wstart := time.Now()
+	if err := bc.writeBlockAndSetHead(block, parent.Root, receipts, logs, statedb); err != nil {
+		return err
+	}
+	writeUtil, err := cpu.Percent(0, false)
 	if err != nil {
 		log.Warn("Failed to get CPU percent", "err", err)
 	}
@@ -1434,34 +1458,9 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	blockValidationTimer.Inc((vtime - (triehash + trieUpdate)).Milliseconds()) // The time spent on block validation
 	blockTrieOpsTimer.Inc((triehash + trieUpdate + trieRead).Milliseconds())   // The time spent on trie operations
 
-	// If [writes] are disabled, skip [writeBlockWithState] so that we do not write the block
-	// or the state trie to disk.
-	// Note: in pruning mode, this prevents us from generating a reference to the state root.
-	if !writes {
-		return nil
-	}
-
-	// Write the block to the chain and get the status.
-	// writeBlockWithState (called within writeBlockAndSethead) creates a reference that
-	// will be cleaned up in Accept/Reject so we need to ensure an error cannot occur
-	// later in verification, since that would cause the referenced root to never be dereferenced.
-	wstart := time.Now()
-	if err := bc.writeBlockAndSetHead(block, parent.Root, receipts, logs, statedb); err != nil {
-		return err
-	}
-	blockWriteTime := time.Since(wstart)
-	writeUtil, err := cpu.Percent(blockWriteTime, false)
-	if err != nil {
-		log.Warn("Failed to get CPU percent", "err", err)
-	}
-
-	blockInsertTime := time.Since(start)
-	overallUtil, err := cpu.Percent(blockInsertTime, false)
-	if err != nil {
-		log.Warn("Failed to get CPU percent", "err", err)
-	}
-
 	// Update the metrics touched during block commit
+	blockWriteTime := time.Since(wstart)
+	blockInsertTime := time.Since(start)
 	accountCommitTimer.Inc(statedb.AccountCommits.Milliseconds())   // Account commits are complete, we can mark them
 	storageCommitTimer.Inc(statedb.StorageCommits.Milliseconds())   // Storage commits are complete, we can mark them
 	snapshotCommitTimer.Inc(statedb.SnapshotCommits.Milliseconds()) // Snapshot commits are complete, we can mark them
@@ -1489,7 +1488,7 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		accountReadTime, storageReadTime, snapshotAccountReadTime, snapshotStorageReadTime,
 		accountUpdateTime, storageUpdateTime, accountHashTime, storageHashTime,
 		accountCommitTime, storageCommitTime, snapshotCommitTime, triedbCommitTime,
-		overallUtil[0], execUtil[0], validationUtil[0], writeUtil[0])
+		execUtil[0], validationUtil[0], writeUtil[0], miscUtil[0])
 
 	log.Debug("Inserted new block", "number", block.Number(), "hash", block.Hash(),
 		"parentHash", block.ParentHash(),
