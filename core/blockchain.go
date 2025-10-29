@@ -68,6 +68,7 @@ import (
 	"github.com/ava-labs/libevm/log"
 	"github.com/ava-labs/libevm/metrics"
 	"github.com/ava-labs/libevm/triedb"
+	"github.com/shirou/gopsutil/cpu"
 
 	// Force libevm metrics of the same name to be registered first.
 	_ "github.com/ava-labs/libevm/core"
@@ -1399,6 +1400,10 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		return err
 	}
 	ptime := time.Since(pstart)
+	execUtil, err := cpu.Percent(ptime, false)
+	if err != nil {
+		log.Warn("Failed to get CPU percent", "err", err)
+	}
 
 	// Validate the state using the default validator
 	vstart := time.Now()
@@ -1407,6 +1412,10 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		return err
 	}
 	vtime := time.Since(vstart)
+	validationUtil, err := cpu.Percent(vtime, false)
+	if err != nil {
+		log.Warn("Failed to get CPU percent", "err", err)
+	}
 
 	// Update the metrics touched during block processing and validation
 	accountReadTimer.Inc(statedb.AccountReads.Milliseconds())                  // Account reads are complete(in processing)
@@ -1440,9 +1449,19 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	if err := bc.writeBlockAndSetHead(block, parent.Root, receipts, logs, statedb); err != nil {
 		return err
 	}
-	// Update the metrics touched during block commit
 	blockWriteTime := time.Since(wstart)
+	writeUtil, err := cpu.Percent(blockWriteTime, false)
+	if err != nil {
+		log.Warn("Failed to get CPU percent", "err", err)
+	}
+
 	blockInsertTime := time.Since(start)
+	overallUtil, err := cpu.Percent(blockInsertTime, false)
+	if err != nil {
+		log.Warn("Failed to get CPU percent", "err", err)
+	}
+
+	// Update the metrics touched during block commit
 	accountCommitTimer.Inc(statedb.AccountCommits.Milliseconds())   // Account commits are complete, we can mark them
 	storageCommitTimer.Inc(statedb.StorageCommits.Milliseconds())   // Storage commits are complete, we can mark them
 	snapshotCommitTimer.Inc(statedb.SnapshotCommits.Milliseconds()) // Snapshot commits are complete, we can mark them
@@ -1464,12 +1483,13 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	snapshotCommitTime := statedb.SnapshotCommits.Seconds() * 1000
 	triedbCommitTime := statedb.TrieDBCommits.Seconds() * 1000
 
-	bc.latLogger.Printf("%d,%x,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f",
+	bc.latLogger.Printf("%d,%x,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
 		block.Number(), block.Hash(),
 		blockInsertTime.Seconds()*1000, ptime.Seconds()*1000, vtime.Seconds()*1000, blockWriteTime.Seconds()*1000,
 		accountReadTime, storageReadTime, snapshotAccountReadTime, snapshotStorageReadTime,
 		accountUpdateTime, storageUpdateTime, accountHashTime, storageHashTime,
-		accountCommitTime, storageCommitTime, snapshotCommitTime, triedbCommitTime)
+		accountCommitTime, storageCommitTime, snapshotCommitTime, triedbCommitTime,
+		overallUtil, execUtil, validationUtil, writeUtil)
 
 	log.Debug("Inserted new block", "number", block.Number(), "hash", block.Hash(),
 		"parentHash", block.ParentHash(),
