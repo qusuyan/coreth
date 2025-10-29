@@ -1489,7 +1489,7 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 		accountReadTime, storageReadTime, snapshotAccountReadTime, snapshotStorageReadTime,
 		accountUpdateTime, storageUpdateTime, accountHashTime, storageHashTime,
 		accountCommitTime, storageCommitTime, snapshotCommitTime, triedbCommitTime,
-		overallUtil, execUtil, validationUtil, writeUtil)
+		overallUtil[0], execUtil[0], validationUtil[0], writeUtil[0])
 
 	log.Debug("Inserted new block", "number", block.Number(), "hash", block.Hash(),
 		"parentHash", block.ParentHash(),
