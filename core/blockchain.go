@@ -1483,7 +1483,7 @@ func (bc *BlockChain) insertBlock(block *types.Block, writes bool) error {
 	triedbCommitTime := statedb.TrieDBCommits.Seconds() * 1000
 
 	bc.latLogger.Printf("%d,%x,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
-		block.Number(), block.Hash(),
+		block.Number(), block.Root(),
 		blockInsertTime.Seconds()*1000, ptime.Seconds()*1000, vtime.Seconds()*1000, blockWriteTime.Seconds()*1000,
 		accountReadTime, storageReadTime, snapshotAccountReadTime, snapshotStorageReadTime,
 		accountUpdateTime, storageUpdateTime, accountHashTime, storageHashTime,
