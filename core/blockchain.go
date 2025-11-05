@@ -384,6 +384,7 @@ type BlockChain struct {
 
 	// loggers
 	latLogger golog.Logger
+	txnLogger golog.Logger
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -401,6 +402,12 @@ func NewBlockChain(
 	lat_f, err := os.OpenFile(latFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
 		log.Error("Failed to open latency log file", "error", err)
+		return nil, err
+	}
+
+	txn_f, err := os.OpenFile(logDir+"txn-latency-"+startBlk+"-"+endBlk+".log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		log.Error("Failed to open transaction log file", "error", err)
 		return nil, err
 	}
 
@@ -445,10 +452,11 @@ func NewBlockChain(
 		quit:              make(chan struct{}),
 		acceptedLogsCache: NewFIFOCache[common.Hash, [][]*types.Log](cacheConfig.AcceptedCacheSize),
 		latLogger:         *golog.New(lat_f, "", 0),
+		txnLogger:         *golog.New(txn_f, "", 0),
 	}
 	bc.stateCache = extstate.NewDatabaseWithNodeDB(bc.db, bc.triedb)
 	bc.validator = NewBlockValidator(chainConfig, bc, engine)
-	bc.processor = NewStateProcessor(chainConfig, bc, engine)
+	bc.processor = NewStateProcessor(chainConfig, bc, engine, &bc.txnLogger)
 
 	bc.hc, err = NewHeaderChain(db, chainConfig, cacheConfig, engine)
 	if err != nil {

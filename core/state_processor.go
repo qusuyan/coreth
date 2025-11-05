@@ -29,7 +29,9 @@ package core
 
 import (
 	"fmt"
+	golog "log"
 	"math/big"
+	"time"
 
 	"github.com/ava-labs/coreth/consensus"
 	"github.com/ava-labs/coreth/params"
@@ -50,14 +52,16 @@ type StateProcessor struct {
 	config *params.ChainConfig // Chain configuration options
 	bc     *BlockChain         // Canonical block chain
 	engine consensus.Engine    // Consensus engine used for block rewards
+	logger *golog.Logger
 }
 
 // NewStateProcessor initialises a new StateProcessor.
-func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consensus.Engine) *StateProcessor {
+func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consensus.Engine, logger *golog.Logger) *StateProcessor {
 	return &StateProcessor{
 		config: config,
 		bc:     bc,
 		engine: engine,
+		logger: logger,
 	}
 }
 
@@ -98,6 +102,7 @@ func (p *StateProcessor) Process(block *types.Block, parent *types.Header, state
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		txStart := time.Now()
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
@@ -109,6 +114,8 @@ func (p *StateProcessor) Process(block *types.Block, parent *types.Header, state
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
+		txTime := time.Since(txStart)
+		p.logger.Printf("%d,%x,%.5f", block.Number(), i, txTime.Seconds()*1000)
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	if err := p.engine.Finalize(p.bc, block, parent, statedb, receipts); err != nil {
