@@ -146,6 +146,7 @@ type StateDB interface {
 
 	GetBalance(common.Address) *uint256.Int
 	GetBalanceMultiCoin(common.Address, common.Hash) *big.Int
+	CheckEnoughBalance(common.Address, *uint256.Int) bool
 
 	GetNonce(common.Address) uint64
 	SetNonce(common.Address, uint64)

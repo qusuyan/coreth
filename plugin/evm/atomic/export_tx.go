@@ -322,7 +322,7 @@ func (utx *UnsignedExportTx) EVMStateTransfer(ctx *snow.Context, state StateDB) 
 				uint256.NewInt(from.Amount),
 				uint256.NewInt(X2CRate.Uint64()),
 			)
-			if state.GetBalance(from.Address).Cmp(amount) < 0 {
+			if !state.CheckEnoughBalance(from.Address, amount) {
 				return errInsufficientFunds
 			}
 			state.SubBalance(from.Address, amount)
