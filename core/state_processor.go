@@ -116,9 +116,7 @@ func (p *StateProcessor) Process(block *types.Block, parent *types.Header, state
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 		txTime := time.Since(txStart)
-		txTimeMillis := txTime.Seconds() * 1000
-		storageReadTimeMillis := statedb.StorageReads.Seconds() * 1000
-		p.logger.Printf("%d,%x,%d,%d,%.5f,%.5f", block.Number(), i, msg.GasLimit, receipt.GasUsed, txTimeMillis, storageReadTimeMillis)
+		p.logger.Printf("%d,%x,%d,%d,%d", block.Number(), i, msg.GasLimit, receipt.GasUsed, txTime.Nanoseconds())
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	if err := p.engine.Finalize(p.bc, block, parent, statedb, receipts); err != nil {
