@@ -29,7 +29,9 @@ package core
 
 import (
 	"fmt"
+	golog "log"
 	"math/big"
+	"time"
 
 	"github.com/ava-labs/coreth/consensus"
 	"github.com/ava-labs/coreth/params"
@@ -50,14 +52,16 @@ type StateProcessor struct {
 	config *params.ChainConfig // Chain configuration options
 	bc     *BlockChain         // Canonical block chain
 	engine consensus.Engine    // Consensus engine used for block rewards
+	logger *golog.Logger       // Logger used to log tx processing times
 }
 
 // NewStateProcessor initialises a new StateProcessor.
-func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consensus.Engine) *StateProcessor {
+func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consensus.Engine, logger *golog.Logger) *StateProcessor {
 	return &StateProcessor{
 		config: config,
 		bc:     bc,
 		engine: engine,
+		logger: logger,
 	}
 }
 
@@ -98,17 +102,23 @@ func (p *StateProcessor) Process(block *types.Block, parent *types.Header, state
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		txStart := time.Now()
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
+		statedb.TxnStart = txStart
 		receipt, err := applyTransaction(msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
+		txTime := time.Since(txStart)
+		txTimeMillis := txTime.Seconds() * 1000
+		storageReadTimeMillis := statedb.StorageReads.Seconds() * 1000
+		p.logger.Printf("%d,%x,%d,%d,%.5f,%.5f", block.Number(), i, msg.GasLimit, receipt.GasUsed, txTimeMillis, storageReadTimeMillis)
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	if err := p.engine.Finalize(p.bc, block, parent, statedb, receipts); err != nil {
